@@ -123,12 +123,14 @@ class Main(QMainWindow):
         Training = QAction(str('Model Training'), self)
         #Training.setShortcut("Ctrl+Q")
         Training.setStatusTip('Set Mode for Traning Machine Learning Model')
-        #Training.triggered.connect(self.setTraining)
+        Training.setCheckable(True) 
+        #Training.triggered.connect(self.setMode)
 
         Testing = QAction(str('Model Testing'), self)
         #Testing.setShortcut("Ctrl+Q")
         Testing.setStatusTip('Set Mode for Testing Machine Learning Model')
-        #Testing.triggered.connect(self.setTesting)
+        Testing.setCheckable(True)
+        #Testing.triggered.connect(self.setMode)
 
         SettingsMenu = self.menuBar().addMenu(str("Settings"))
         ThemeMenu = SettingsMenu.addMenu(str("Theme"))
