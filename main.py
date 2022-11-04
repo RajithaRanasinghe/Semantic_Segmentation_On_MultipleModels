@@ -13,11 +13,11 @@ except:
     pass
 
 if 'PySide2' in sys.modules:
-    from PySide2.QtGui import QPixmap,QPalette,QColor,QPainter, QPen, QBrush, QImage, QIcon
+    from PySide2.QtGui import QPixmap,QPalette,QColor,QPainter, QPen, QBrush, QImage, QIcon, QIntValidator, QDoubleValidator
     from PySide2.QtWidgets import QWidget,QComboBox,QDialog, QCheckBox, QMessageBox, QFileDialog, QPushButton, QLineEdit, QProgressBar, QGridLayout, QHBoxLayout, QVBoxLayout, QApplication, QSplashScreen,QTabWidget,QMainWindow,QLabel,QAction,QStyleFactory,QDialogButtonBox
     from PySide2.QtCore import QTimer,Qt,QSize
 elif 'PyQt5' in sys.modules:
-    from PyQt5.QtGui import QPixmap,QPalette,QPainter, QPen, QColor, QBrush, QImage, QIcon
+    from PyQt5.QtGui import QPixmap,QPalette,QPainter, QPen, QColor, QBrush, QImage, QIcon, QIntValidator, QDoubleValidator
     from PyQt5.QtWidgets import QWidget,QComboBox,QDialog, QCheckBox, QMessageBox, QFileDialog, QPushButton, QLineEdit, QProgressBar, QGridLayout, QHBoxLayout, QVBoxLayout, QApplication, QSplashScreen,QTabWidget,QMainWindow,QLabel,QAction,QStyleFactory,QDialogButtonBox
     from PyQt5.QtCore import QTimer,Qt,QSize,QColor
 else:
@@ -45,7 +45,14 @@ class Main(QMainWindow):
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setFixedSize(QSize(1024, 768))
         self.styleSheetList = QStyleFactory.keys()
-        
+
+        #parameters
+        self.image_dir = ''
+        self.mask_dir = ''
+        self.val_image_dir = ''
+        self.val_mask_dir = ''
+
+        self.parameters = {'epoch':200, 'datasetName':'dataset', 'LearningRate':5e-4, 'BatchSize':4, 'ModelInputHeight':256, 'ModelInputWidth':256, 'LogPath':'', 'TrainingImages':'', 'TrainingMasks':'', 'ValidationImages':'', 'ValidationMasks':'', 'OutputPath':'', 'Mode':'Training', 'Model':0, 'ModelName':''}
         self.statusDict = {'Mode':'None', 'Input':'None', 'Pre_Process':'None', 'ML_Model':'None', 'Post_Process':'None', 'Output':'None'}
         self.thresholdingMethodList = {'Yen’s method' : threshold_yen, 'triangle algorithm' : threshold_triangle , 'Otsu’s method' : threshold_otsu, 'minimum method' : threshold_minimum, 'mean of grayscale values' : threshold_mean,'ISODATA method' : threshold_isodata}
         self.Ml_ModelList = {'U-net':Unet, 'FCN-Resnet50':fcn_resnet50, 'FCN-Resnet101':fcn_resnet101, 'DeepLabV3-Resnet50':deeplabv3_resnet50, 'DeepLabV3-Resnet101':deeplabv3_resnet101, 'DeepLabV3-MobileNet-V3-Large':deeplabv3_mobilenet_v3_large, 'Lraspp-MobileNet-V3-Large':lraspp_mobilenet_v3_large}
@@ -77,11 +84,56 @@ class Main(QMainWindow):
         self.PostProcess_label = QLabel("Post Process = {}".format(self.statusDict['Post_Process']))
         self.Output_label = QLabel("Output = {}".format(self.statusDict['Output']))
 
+        # Hyperparameter Inputs
+        self.Epoch_label = QLabel("No Epochs : ")
+        self.Epoch_label.setWordWrap(True)
+        self.Epoch_Text = QLineEdit('200')
+        self.Epoch_Text.setAlignment(Qt.AlignRight)
+        self.Epoch_Text.setValidator(QIntValidator(0,1000))
+        self.Epoch_Text.textChanged.connect(self.updateStatus)
+
+        self.Batch_label = QLabel("Batch Size : ")
+        self.Batch_label.setWordWrap(True)
+        self.Batch_Text = QLineEdit('4')
+        self.Batch_Text.setAlignment(Qt.AlignRight)
+        self.Batch_Text.setValidator(QIntValidator(0,1000))
+        self.Batch_Text.textChanged.connect(self.updateStatus)
+
+        self.ModelInHeight_label = QLabel("Model Input Height : ")
+        self.ModelInHeight_label.setWordWrap(True)
+        self.ModelInHeight_Text = QLineEdit('256')
+        self.ModelInHeight_Text.setAlignment(Qt.AlignRight)
+        self.ModelInHeight_Text.setValidator(QIntValidator(0,1000))
+        self.ModelInHeight_Text.textChanged.connect(self.updateStatus)
+
+        self.ModelInWidth_label = QLabel("Model Input Width : ")
+        self.ModelInWidth_label.setWordWrap(True)
+        self.ModelInWidth_Text = QLineEdit('256')
+        self.ModelInWidth_Text.setAlignment(Qt.AlignRight)
+        self.ModelInWidth_Text.setValidator(QIntValidator(0,1000))
+        self.ModelInWidth_Text.textChanged.connect(self.updateStatus)
+
+        self.LearningRate_label = QLabel("Learning Rate : ")
+        self.LearningRate_label.setWordWrap(True)
+        self.LearningRate_Text = QLineEdit('5e-4')
+        self.LearningRate_Text.setAlignment(Qt.AlignRight)
+        self.LearningRate_Text.setValidator(QDoubleValidator(0,10,1000000))
+        self.LearningRate_Text.textChanged.connect(self.updateStatus)
+
+        self.DataName_label = QLabel("Dataset Name : ")
+        self.DataName_label.setWordWrap(True)
+        self.DataName_Text = QLineEdit('dataset')
+        self.DataName_Text.setAlignment(Qt.AlignRight)
+        self.DataName_Text.textChanged.connect(self.updateStatus)
+
+
 
     def initUI(self):
         #Layouts        
         self.main_layout = QVBoxLayout()
         self.status_layout = QHBoxLayout()
+        self.hyperparameters_layout = QHBoxLayout()
+        
         self.data_layout = QGridLayout()
         self.imgView_layout = QVBoxLayout()
         self.control_btn_layout = QHBoxLayout()
@@ -89,12 +141,19 @@ class Main(QMainWindow):
 
         #set margins (left,top,right,bottom)
         self.main_layout.setContentsMargins(1,1,1,1)
+        self.status_layout.setContentsMargins(1,1,1,1)
+        self.hyperparameters_layout.setContentsMargins(1,1,1,1)
+        
+        
         self.data_layout.setContentsMargins(1,1,1,1)
         self.control_btn_layout.setContentsMargins(1,1,1,1)
         self.imgView_layout.setContentsMargins(1,1,1,1)
 
         #layout Widgets
         self.status_widget = QWidget()
+        self.hyperparameters_widget = QWidget()
+
+
         self.data_widget = QWidget()
         self.control_btn_widget = QWidget()
         self.main_widget = QWidget()
@@ -114,12 +173,31 @@ class Main(QMainWindow):
         #Set widget
         self.status_widget.setLayout(self.status_layout)
 
+        #Add component widgets to hyperparameter layout
+        self.hyperparameters_layout.addWidget(self.Epoch_label)
+        self.hyperparameters_layout.addWidget(self.Epoch_Text)
+        self.hyperparameters_layout.addWidget(self.Batch_label)
+        self.hyperparameters_layout.addWidget(self.Batch_Text)
+        self.hyperparameters_layout.addWidget(self.ModelInHeight_label)
+        self.hyperparameters_layout.addWidget(self.ModelInHeight_Text)
+        self.hyperparameters_layout.addWidget(self.ModelInWidth_label)
+        self.hyperparameters_layout.addWidget(self.ModelInWidth_Text)
+        self.hyperparameters_layout.addWidget(self.LearningRate_label)
+        self.hyperparameters_layout.addWidget(self.LearningRate_Text)
+        self.hyperparameters_layout.addWidget(self.DataName_label)
+        self.hyperparameters_layout.addWidget(self.DataName_Text)
+
+        #Set widget
+        self.hyperparameters_widget.setLayout(self.hyperparameters_layout)
+
 
         self.imgView_widget.setLayout(self.imgView_layout)
 
 
         #Add widjets to main layout
-        self.main_layout.addWidget(self.status_widget)        
+        self.main_layout.addWidget(self.status_widget)
+        self.main_layout.addWidget(self.hyperparameters_widget)
+
         self.main_layout.addWidget(self.data_widget)
         self.main_layout.addWidget(self.imgView_widget)
         self.main_layout.addWidget(self.control_btn_widget)
@@ -202,10 +280,28 @@ class Main(QMainWindow):
         Output_folder.setStatusTip('Set Output Folder Location')
         Output_folder.triggered.connect(self.setOutput_folder)
 
-        Hyperparameter = QAction(str('Set Hyperparameters'), self)
-        #Hyperparameter.setShortcut("Ctrl+Q")
-        Hyperparameter.setStatusTip('Set Hyperparameters for Machine Learning')
-        #Hyperparameter.triggered.connect(self.setHyperparameter)
+        TrImages = QAction(str('Training Images'), self)
+        #TrImages.setShortcut("Ctrl+Q")
+        TrImages.setStatusTip('Set Training Image Folder')
+        TrImages.triggered.connect(self.setFolder_TrImages)
+
+        TrMasks = QAction(str('Training Masks'), self)
+        #TrMasks.setShortcut("Ctrl+Q")
+        TrMasks.setStatusTip('Set Training Image Folder')
+        TrMasks.triggered.connect(self.setFolder_Video)
+
+        ValImages = QAction(str('Validation Images'), self)
+        #ValImages.setShortcut("Ctrl+Q")
+        ValImages.setStatusTip('Set Validation Image Folder')
+        ValImages.triggered.connect(self.setFolder_Video)
+
+
+        ValMasks = QAction(str('Validation Masks'), self)
+        #ValMasks.setShortcut("Ctrl+Q")
+        ValMasks.setStatusTip('Set Validation Masks Folder')
+        ValMasks.triggered.connect(self.setFolder_Video)
+
+
 
 
         self.Training = QAction(str('Model Training'), self)
@@ -233,7 +329,16 @@ class Main(QMainWindow):
         ModeMenu.addAction(self.Training)
         ModeMenu.addAction(self.Testing)
 
-        InputMenu = self.menuBar().addMenu(str("Input"))
+        TrainInputMenu = self.menuBar().addMenu(str("Train Input"))
+        TrainImages = TrainInputMenu.addMenu(str("Train"))
+        TrainImages.addAction(TrImages)
+        TrainImages.addAction(TrMasks)
+        ValidationImages = TrainInputMenu.addMenu(str("Validation"))
+        ValidationImages.addAction(ValImages)
+        ValidationImages.addAction(ValMasks)
+
+
+        InputMenu = self.menuBar().addMenu(str("Test Input"))
         ImageInputMenu = InputMenu.addMenu(str("Image Input"))
         Image2DInputMenu = ImageInputMenu.addMenu(str("2D Image"))
         Image2DInputMenu.addAction(One_2DImage)
@@ -295,8 +400,6 @@ class Main(QMainWindow):
         OutputMenu = self.menuBar().addMenu(str("Output"))
         OutputMenu.addAction(Output_folder)
 
-        HyperparameterMenu = self.menuBar().addMenu(str("Hyperparameters"))
-        HyperparameterMenu.addAction(Hyperparameter)
 
     def setPostProcessLayer(self, PostProcess):
         for item in  self.PostProcessActions:
@@ -399,6 +502,14 @@ class Main(QMainWindow):
         print(FOLDER_NAME)
         print(FOLDER_PATH)
 
+
+    def setFolder_TrImages(self):
+        FOLDER_NAME, FOLDER_PATH = self.getFolder()
+        self.statusDict['Input'] = 'Training Images'
+
+        self.updateStatus()
+
+
     def setMode(self, Mode):
         self.statusDict['Mode'] = Mode
         if self.statusDict['Mode'] == 'Testing':
@@ -421,6 +532,22 @@ class Main(QMainWindow):
         self.PostProcess_label.setText("Post Process = {}".format(self.statusDict['Post_Process']))
         self.Output_label.setText("Output = {}".format(self.statusDict['Output']))
 
+        #self.parameters = {'epoch':200, 'datasetName':'dataset', 'LearningRate':5e-4, 'BatchSize':4, 'ModelInputHeight':256, 'ModelInputWidth':256, 'LogPath':'', 'TrainingImages':'', 'TrainingMasks':'', 'ValidationImages':'', 'ValidationMasks':'', 'OutputPath':'', 'Mode':'Training', 'Model':0, 'ModelName':''}
+        self.parameters['datasetName'] = str(self.DataName_Text.text())
+        self.parameters['epoch'] = int(self.Epoch_Text.text())
+        self.parameters['LearningRate'] = float(self.LearningRate_Text.text())
+        self.parameters['BatchSize'] = int(self.Batch_Text.text())
+        self.parameters['ModelInputHeight'] = int(self.ModelInHeight_Text.text())
+        self.parameters['ModelInputWidth'] = int(self.ModelInWidth_Text.text())
+        self.parameters['Mode'] = self.statusDict['Mode']
+        self.parameters['ModelName'] = self.statusDict['ML_Model']
+        self.parameters['Model'] =  self.Ml_ModelList[self.parameters['ModelName']]
+        self.parameters['TrainingImages'] = self.image_dir
+        self.parameters['TrainingMasks'] = self.mask_dir
+        self.parameters['ValidationImages'] = self.val_image_dir
+        self.parameters['ValidationMasks'] = self.val_mask_dir
+    
+    
     def getFolder(self):
         dlgBox = QFileDialog()
         dlgBox.setFileMode(QFileDialog.Directory)
