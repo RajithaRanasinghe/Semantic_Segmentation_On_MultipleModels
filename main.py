@@ -54,7 +54,7 @@ class Main(QMainWindow):
         self.val_image_dir = ''
         self.val_mask_dir = ''
 
-        self.parameters = {'epoch':200, 'datasetName':'dataset', 'LearningRate':5e-4, 'BatchSize':4, 'ModelInputHeight':256, 'ModelInputWidth':256, 'LogPath':'', 'TrainingImages':'', 'TrainingMasks':'', 'ValidationImages':'', 'ValidationMasks':'', 'OutputPath':'', 'Mode':'Training', 'Model':0, 'ModelName':''}
+        self.parameters = {'epoch':200, 'datasetName':'dataset', 'LearningRate':5e-4, 'BatchSize':4, 'ModelInputSize':256, 'TrainingImages':'', 'TrainingMasks':'', 'ValidationImages':'', 'ValidationMasks':'', 'OutputPath':'', 'Mode':'Training', 'Model':0, 'ModelName':''}
         self.statusDict = {'Mode':'None', 'Input':'None', 'Pre_Process':'None', 'ML_Model':'None', 'Post_Process':'None', 'Output':'None'}
         self.thresholdingMethodList = {'Yen’s method' : threshold_yen, 'triangle algorithm' : threshold_triangle , 'Otsu’s method' : threshold_otsu, 'minimum method' : threshold_minimum, 'mean of grayscale values' : threshold_mean,'ISODATA method' : threshold_isodata}
         self.Ml_ModelList = {'None' : 0, 'U-net' : Unet, 'FCN-Resnet50' : fcn_resnet50, 'FCN-Resnet101' : fcn_resnet101, 'DeepLabV3-Resnet50' : deeplabv3_resnet50, 'DeepLabV3-Resnet101' : deeplabv3_resnet101, 'DeepLabV3-MobileNet-V3-Large' : deeplabv3_mobilenet_v3_large, 'Lraspp-MobileNet-V3-Large' : lraspp_mobilenet_v3_large}
@@ -106,19 +106,12 @@ class Main(QMainWindow):
         self.Batch_Text.setValidator(QIntValidator(0,1000))
         self.Batch_Text.textChanged.connect(self.updateStatus)
 
-        self.ModelInHeight_label = QLabel("Model Input Height : ")
-        self.ModelInHeight_label.setWordWrap(True)
-        self.ModelInHeight_Text = QLineEdit('256')
-        self.ModelInHeight_Text.setAlignment(Qt.AlignRight)
-        self.ModelInHeight_Text.setValidator(QIntValidator(0,1000))
-        self.ModelInHeight_Text.textChanged.connect(self.updateStatus)
-
-        self.ModelInWidth_label = QLabel("Model Input Width : ")
-        self.ModelInWidth_label.setWordWrap(True)
-        self.ModelInWidth_Text = QLineEdit('256')
-        self.ModelInWidth_Text.setAlignment(Qt.AlignRight)
-        self.ModelInWidth_Text.setValidator(QIntValidator(0,1000))
-        self.ModelInWidth_Text.textChanged.connect(self.updateStatus)
+        self.ModelInSize_label = QLabel("Model Input Size : ")
+        self.ModelInSize_label.setWordWrap(True)
+        self.ModelInSize_Text = QLineEdit('256')
+        self.ModelInSize_Text.setAlignment(Qt.AlignRight)
+        self.ModelInSize_Text.setValidator(QIntValidator(0,1000))
+        self.ModelInSize_Text.textChanged.connect(self.updateStatus)
 
         self.LearningRate_label = QLabel("Learning Rate : ")
         self.LearningRate_label.setWordWrap(True)
@@ -141,12 +134,18 @@ class Main(QMainWindow):
         self.Run_btn.clicked.connect(self.Run)
 
     def Apply(self):
-        Network = train.Network(self.parameters)
-        Network.run()
+        #Network = train.Network(self.parameters)
+        #Network.run()
+        train.runMulti_proess(self.parameters)
         print('Network Created')
 
     def Run(self):
-        pass
+        if train.OutputData_queue.get() == 'Terminate':
+            train.Terminate_process()
+            print('Terminated')
+        else:
+            print(type(train.OutputData_queue.get()))
+        
 
     def initUI(self):
         #Layouts        
@@ -199,10 +198,8 @@ class Main(QMainWindow):
         self.hyperparameters_layout.addWidget(self.Epoch_Text)
         self.hyperparameters_layout.addWidget(self.Batch_label)
         self.hyperparameters_layout.addWidget(self.Batch_Text)
-        self.hyperparameters_layout.addWidget(self.ModelInHeight_label)
-        self.hyperparameters_layout.addWidget(self.ModelInHeight_Text)
-        self.hyperparameters_layout.addWidget(self.ModelInWidth_label)
-        self.hyperparameters_layout.addWidget(self.ModelInWidth_Text)
+        self.hyperparameters_layout.addWidget(self.ModelInSize_label)
+        self.hyperparameters_layout.addWidget(self.ModelInSize_Text)
         self.hyperparameters_layout.addWidget(self.LearningRate_label)
         self.hyperparameters_layout.addWidget(self.LearningRate_Text)
         self.hyperparameters_layout.addWidget(self.DataName_label)
@@ -540,25 +537,25 @@ class Main(QMainWindow):
     def setFolder_TrImages(self):
         FOLDER_NAME, FOLDER_PATH = self.getFolder()
         self.statusDict['Input'] = 'Training Images'
-        self.image_dir = FOLDER_PATH
+        self.image_dir = FOLDER_PATH + '/'
         self.updateStatus()
 
     def setFolder_TrMasks(self):
         FOLDER_NAME, FOLDER_PATH = self.getFolder()
         self.statusDict['Input'] = 'Training Images'
-        self.mask_dir = FOLDER_PATH
+        self.mask_dir = FOLDER_PATH + '/'
         self.updateStatus()
 
     def setFolder_ValImages(self):
         FOLDER_NAME, FOLDER_PATH = self.getFolder()
         self.statusDict['Input'] = 'Training Images'
-        self.val_image_dir = FOLDER_PATH
+        self.val_image_dir = FOLDER_PATH + '/'
         self.updateStatus()
 
     def setFolder_ValMasks(self):
         FOLDER_NAME, FOLDER_PATH = self.getFolder()
         self.statusDict['Input'] = 'Training Images'
-        self.val_mask_dir = FOLDER_PATH
+        self.val_mask_dir = FOLDER_PATH + '/'
         self.updateStatus()
 
 
@@ -589,8 +586,7 @@ class Main(QMainWindow):
         self.parameters['epoch'] = int(self.Epoch_Text.text())
         self.parameters['LearningRate'] = float(self.LearningRate_Text.text())
         self.parameters['BatchSize'] = int(self.Batch_Text.text())
-        self.parameters['ModelInputHeight'] = int(self.ModelInHeight_Text.text())
-        self.parameters['ModelInputWidth'] = int(self.ModelInWidth_Text.text())
+        self.parameters['ModelInputSize'] = int(self.ModelInSize_Text.text())
         self.parameters['Mode'] = self.statusDict['Mode']
         self.parameters['ModelName'] = self.statusDict['ML_Model']
         self.parameters['Model'] =  self.Ml_ModelList[self.parameters['ModelName']]

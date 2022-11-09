@@ -2,6 +2,8 @@
 import os
 import torch
 from PIL import Image
+import imageio
+import numpy as np
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
@@ -13,11 +15,49 @@ import logging
 import sys
 from tensorboardX import SummaryWriter
 
+from multiprocessing import Process, Manager, Queue
+
+
+OutputData_queue = Queue()
+processes = []
+
+#def f(Input_parameters, OutputData_queue):
+def f(Input_parameters):
+    Network_instance = Network(Input_parameters)
+    #Network_instance.run(OutputData_queue)
+    Network_instance.run(0)
+
+
+def runMulti_proess(parameters):
+    
+    #p = Process(target=f, args=(parameters, OutputData_queue))
+    p = Process(target=f, args=(parameters,))
+    processes.append(p)
+    #p.daemon = True
+    p.start()
+    
+    #p.join()
+
+def Terminate_process():
+    for i in range(len(processes)):
+        process = processes[i]
+        process.terminate()
+
+
+
+
+
+
+
 class Network():
     def __init__(self, parameters):
         super(Network, self).__init__()
         self.MyParameters = parameters
 
+        self.save_best = False
+        self.best_mIoU = 0
+        self.best_dice_coeff = 0
+        self._init_logger()
 
 
         self.BinaryCrossEntropy = torch.nn.BCELoss()
@@ -28,7 +68,7 @@ class Network():
         self.model_name = self.MyParameters['ModelName']
         self.dataset_name = self.MyParameters['datasetName']
 
-        log_dir = 'logs/' + self.model_name + '/' + self.dataset_name + '/train' + '/{}'.format(
+        log_dir = self.MyParameters['OutputPath'] + '/' + 'logs/' + self.model_name + '/' + self.dataset_name + '/train' + '/{}'.format(
             time.strftime('%Y%m%d-%H%M%S'))
 
         self.logger = self.get_logger(log_dir)
@@ -42,7 +82,7 @@ class Network():
 
 
 
-    def run(self):
+    def run(self, Output_queue):
         #self.parameters = {'epoch':200, 'datasetName':'dataset', 'LearningRate':5e-4, 'BatchSize':4, 'ModelInputHeight':256, 'ModelInputWidth':256, 'LogPath':'', 'TrainingImages':'', 'TrainingMasks':'', 'ValidationImages':'', 'ValidationMasks':'', 'OutputPath':'', 'Mode':'Training', 'Model':0, 'ModelName':''}
         model = self.MyParameters['Model'](pretrained=False, progress=True, num_classes=1, aux_loss=None)
         
@@ -58,7 +98,7 @@ class Network():
         val_image_root = self.MyParameters['ValidationImages']
         val_gt_root = self.MyParameters['ValidationMasks']
         batchsize = self.MyParameters['BatchSize']
-        trainsize = (self.MyParameters['ModelInputHeight'], self.MyParameters['ModelInputWidth'])
+        trainsize = self.MyParameters['ModelInputSize']
         NumEpoch = self.MyParameters['epoch']
 
         train_loader, val_loader = self.get_loader(image_root, gt_root, val_image_root, val_gt_root, batchsize, trainsize)
@@ -140,6 +180,9 @@ class Network():
                 self.visualize_val_gt(gts, 'gt{}'.format(i))
                 self.visualize_val_prediction(pred, 'pd{}'.format(i))
 
+                #Output_queue.put([images,gts])
+
+
 
 
                 val_dice_coe = self.dice(pred, gts)
@@ -180,11 +223,57 @@ class Network():
                 os.makedirs(Checkpoints_Path)
 
             if self.save_best:
-                torch.save(model.state_dict(), Checkpoints_Path + '/Model_{}_{}_{}.pth'.format(self.model_name, self.dataset_name, datetime.now()))
+                torch.save(model.state_dict(), Checkpoints_Path + '/Model_{}_{}.pth'.format(self.model_name, self.dataset_name))
 
             self.logger.info('current best dice coef {}'.format(self.best_dice_coeff))
             self.logger.info('current patience :{}'.format(self.patience))
-        
+
+        print('Training Finished')
+        #Output_queue.put('Terminate')
+
+    def visualize_gt(self, var_map, i):
+        count = i
+        for kk in range(var_map.shape[0]):
+            pred_edge_kk = var_map[kk, :, :, :]
+            pred_edge_kk = pred_edge_kk.detach().cpu().numpy().squeeze()
+            pred_edge_kk *= 255.0
+            pred_edge_kk = pred_edge_kk.astype(np.uint8)
+            name = '{:02d}_gt.png'.format(count)
+            imageio.imwrite(self.image_save_path + "/train_" + name, pred_edge_kk)
+
+    def visualize_prediction(self, var_map, i):
+        count = i
+        for kk in range(var_map.shape[0]):
+            pred_edge_kk = var_map[kk, :, :, :]
+            pred_edge_kk = pred_edge_kk.detach().cpu().numpy().squeeze()
+            pred_edge_kk = (pred_edge_kk - pred_edge_kk.min()) / (pred_edge_kk.max() - pred_edge_kk.min() + 1e-8)
+            pred_edge_kk *= 255.0
+            pred_edge_kk = pred_edge_kk.astype(np.uint8)
+            name = '{:02d}_pred.png'.format(count)
+            imageio.imwrite(self.image_save_path + "/train_" + name, pred_edge_kk)
+
+
+
+    def visualize_val_gt(self, var_map, i):
+        count = i
+        for kk in range(var_map.shape[0]):
+            pred_edge_kk = var_map[kk, :, :, :]
+            pred_edge_kk = pred_edge_kk.detach().cpu().numpy().squeeze()
+            pred_edge_kk *= 255.0
+            pred_edge_kk = pred_edge_kk.astype(np.uint8)
+            name = '{}_gt.png'.format(count)
+            imageio.imwrite(self.image_save_path + "/val_" + name, pred_edge_kk)
+
+    def visualize_val_prediction(self, var_map, i):
+        count = i
+        for kk in range(var_map.shape[0]):
+            pred_edge_kk = var_map[kk, :, :, :]
+            pred_edge_kk = pred_edge_kk.detach().cpu().numpy().squeeze()
+            pred_edge_kk = (pred_edge_kk - pred_edge_kk.min()) / (pred_edge_kk.max() - pred_edge_kk.min() + 1e-8)
+            pred_edge_kk *= 255.0
+            pred_edge_kk = pred_edge_kk.astype(np.uint8)
+            name = '{}_pred.png'.format(count)
+            imageio.imwrite(self.image_save_path + "/val_" + name, pred_edge_kk)       
 
     def dice_loss(self, pred_mask, true_mask):
         loss = 1 - self.dice(pred_mask, true_mask)
@@ -238,11 +327,11 @@ class Network():
                                     batch_size=batchsize,
                                     num_workers=num_workers,
                                     pin_memory=pin_memory,
-                                    shuffle=True)
+                                    shuffle=False)
 
         val_loader = data.DataLoader(dataset=val_dataset,
-                                    batch_size=batchsize,
-                                    #batch_size=2,
+                                    #batch_size=batchsize,
+                                    batch_size=2,
                                     num_workers=num_workers,
                                     pin_memory=pin_memory,
                                     shuffle=False)
