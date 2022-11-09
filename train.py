@@ -16,7 +16,7 @@ import sys
 from tensorboardX import SummaryWriter
 
 from multiprocessing import Process, Manager, Queue
-
+from PySide2.QtCore import QRunnable, Slot, QThreadPool, QObject, Signal
 
 OutputData_queue = Queue()
 processes = []
@@ -46,10 +46,28 @@ def Terminate_process():
 
 
 
+class Worker(QRunnable):
+
+
+    def __init__(self, parameters):
+        super(Worker, self).__init__()
+        # Store constructor arguments (re-used for processing)
+        self.Network_inst = Network(parameters)
+
+    @Slot()  # QtCore.Slot
+    def run(self):
+         self.Network_inst.run(0)
 
 
 
-class Network():
+
+
+
+
+
+class Network(QObject):
+    result = Signal(object)
+    ValStart = Signal()
     def __init__(self, parameters):
         super(Network, self).__init__()
         self.MyParameters = parameters
@@ -58,6 +76,7 @@ class Network():
         self.best_mIoU = 0
         self.best_dice_coeff = 0
         self._init_logger()
+        
 
 
         self.BinaryCrossEntropy = torch.nn.BCELoss()
@@ -70,6 +89,8 @@ class Network():
 
         log_dir = self.MyParameters['OutputPath'] + '/' + 'logs/' + self.model_name + '/' + self.dataset_name + '/train' + '/{}'.format(
             time.strftime('%Y%m%d-%H%M%S'))
+
+        
 
         self.logger = self.get_logger(log_dir)
         print('RUNDIR: {}'.format(log_dir))
@@ -109,6 +130,7 @@ class Network():
         #Training Loop
         print("Let's go!")
         for epoch in range(1, NumEpoch):
+            print('Epoch Start = {}'.format(epoch))
             running_dice = 0.0
             running_loss = 0.0
 
@@ -155,7 +177,7 @@ class Network():
             val_running_dice = 0.0
             val_running_loss = 0.0
 
-
+            self.ValStart.emit()
             #for i, pack in enumerate(val_loader, start=1):
             for i, pack in enumerate(val_loader, start=1):
                 with torch.no_grad():
@@ -181,8 +203,8 @@ class Network():
                 self.visualize_val_prediction(pred, 'pd{}'.format(i))
 
                 #Output_queue.put([images,gts])
-
-
+                #self.visualize_all(images, gts, pred, epoch) # for each iteration
+                
 
 
                 val_dice_coe = self.dice(pred, gts)
@@ -195,6 +217,7 @@ class Network():
                         '{} Epoch [{:03d}/{:03d}], Step [{:04d}/{:04d}], Validation loss: {:.4f}, dice_coe: {:.4f}'.
                             format(datetime.now(), epoch, NumEpoch, i, val_total_step, val_loss.item(), val_dice_coe))
 
+            self.visualize_all(images, gts, pred, epoch) # only for last
 
             val_epoch_dice = val_running_dice / len(val_loader)
             val_epoch_loss = val_running_loss / len(val_loader)
@@ -223,13 +246,49 @@ class Network():
                 os.makedirs(Checkpoints_Path)
 
             if self.save_best:
+                print('Best Model Saving')
                 torch.save(model.state_dict(), Checkpoints_Path + '/Model_{}_{}.pth'.format(self.model_name, self.dataset_name))
 
             self.logger.info('current best dice coef {}'.format(self.best_dice_coeff))
             self.logger.info('current patience :{}'.format(self.patience))
+            
+            print('Epoch End = {}'.format(epoch))
+            
 
         print('Training Finished')
         #Output_queue.put('Terminate')
+
+    def visualize_all(self, image, gt, pred, epoch):
+        print('{}, {}, {}, {}'.format(epoch, np.size(image), np.size(gt), np.size(pred)))
+
+        data = {'Epoch':epoch, 'Images':[], 'GroundTruths':[], 'Predictions':[]}
+
+        for kk in range(image.shape[0]):
+            i = image[kk, :, :, :]
+            i = i.detach().cpu().squeeze()
+            i = i.permute(1,2,0)
+            i = i.numpy()
+            #i *= 255.0
+            #i = i.astype(np.uint8)
+            data['Images'].append(i)
+
+        for kk in range(gt.shape[0]):
+            g = gt[kk, :, :, :]
+            g = g.detach().cpu().numpy().squeeze()
+            g *= 255.0
+            g = g.astype(np.uint8)
+            data['GroundTruths'].append(g)
+
+        for kk in range(pred.shape[0]):
+            p = pred[kk, :, :, :]
+            p = p.detach().cpu().numpy().squeeze()
+            p *= 255.0
+            p = p.astype(np.uint8)
+            data['Predictions'].append(p)
+
+        self.result.emit(data)
+
+
 
     def visualize_gt(self, var_map, i):
         count = i
@@ -330,8 +389,8 @@ class Network():
                                     shuffle=False)
 
         val_loader = data.DataLoader(dataset=val_dataset,
-                                    #batch_size=batchsize,
-                                    batch_size=2,
+                                    batch_size=batchsize,
+                                    #batch_size=2,
                                     num_workers=num_workers,
                                     pin_memory=pin_memory,
                                     shuffle=False)

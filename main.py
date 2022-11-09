@@ -2,6 +2,7 @@ import sys
 import os
 import numpy as np
 import train
+import yaml
 
 try:
     import PySide2
@@ -17,11 +18,11 @@ except:
 if 'PySide2' in sys.modules:
     from PySide2.QtGui import QPixmap,QPalette,QColor,QPainter, QPen, QBrush, QImage, QIcon, QIntValidator, QDoubleValidator
     from PySide2.QtWidgets import QWidget,QComboBox,QDialog, QCheckBox, QMessageBox, QFileDialog, QPushButton, QLineEdit, QProgressBar, QGridLayout, QHBoxLayout, QVBoxLayout, QApplication, QSplashScreen,QTabWidget,QMainWindow,QLabel,QAction,QStyleFactory,QDialogButtonBox
-    from PySide2.QtCore import QTimer,Qt,QSize
+    from PySide2.QtCore import QTimer, Qt, QSize, QRunnable, Slot, QThreadPool, QObject, Signal
 elif 'PyQt5' in sys.modules:
     from PyQt5.QtGui import QPixmap,QPalette,QPainter, QPen, QColor, QBrush, QImage, QIcon, QIntValidator, QDoubleValidator
     from PyQt5.QtWidgets import QWidget,QComboBox,QDialog, QCheckBox, QMessageBox, QFileDialog, QPushButton, QLineEdit, QProgressBar, QGridLayout, QHBoxLayout, QVBoxLayout, QApplication, QSplashScreen,QTabWidget,QMainWindow,QLabel,QAction,QStyleFactory,QDialogButtonBox
-    from PyQt5.QtCore import QTimer,Qt,QSize,QColor
+    from PyQt5.QtCore import QTimer, Qt, QSize, QColor, QRunnable, Slot, QThreadPool, QObject, Signal
 else:
     sys.exit()
     #print("Missing PySide2 or PyQt5")
@@ -30,6 +31,10 @@ else:
 from skimage.filters import threshold_yen, threshold_triangle, threshold_otsu, threshold_minimum, threshold_mean, threshold_isodata
 from torchvision.models.segmentation import lraspp_mobilenet_v3_large, fcn_resnet50, fcn_resnet101, deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenet_v3_large
 import Unet
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 class Main(QMainWindow):
     def __init__(self, parent=None):
@@ -74,6 +79,7 @@ class Main(QMainWindow):
         self.colorPalettes()
         self.createMenus()
         self.initUI()
+        self.threadpool = QThreadPool()
     
 
     def createUIcomponents(self):
@@ -132,11 +138,18 @@ class Main(QMainWindow):
 
         self.Run_btn = QPushButton("RUN")
         self.Run_btn.clicked.connect(self.Run)
+    
+    def print_output(self, data):
+        self.showImages(data['Images'], data['GroundTruths'], data['Predictions'], 'Epoch = {}'.format(data['Epoch']))
 
     def Apply(self):
         #Network = train.Network(self.parameters)
-        #Network.run()
-        train.runMulti_proess(self.parameters)
+        #Network.run(0)
+        #train.runMulti_proess(self.parameters)
+        worker = train.Worker(self.parameters)
+        worker.Network_inst.result.connect(self.print_output)
+        worker.Network_inst.ValStart.connect(self.clearView)
+        self.threadpool.start(worker)
         print('Network Created')
 
     def Run(self):
@@ -145,17 +158,68 @@ class Main(QMainWindow):
             print('Terminated')
         else:
             print(type(train.OutputData_queue.get()))
+
+    def clearView(self):
+        if self.imgView_layout is not None:
+            while self.imgView_layout.count():
+                item = self.imgView_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                else:
+                    self.clearView(item.layout())  #recursive
+    
+    def showImages(self, Input_images, Mask_images, Prediction_images, Method_title):
+
+        fig = Figure(figsize=(12, 12), dpi=65, facecolor=(1, 1, 1), edgecolor=(0, 0, 0))
+        fig.suptitle(Method_title, fontsize=10)
+
+        # Visualize All
+
+        totalColumns = np.shape(Input_images)[0]
+        totalImages = 0
+
+        for i in range (0, np.shape(Input_images)[0]):
+            a=fig.add_subplot(3, totalColumns, totalImages + i + 1)
+            a.imshow(Input_images[i])
+            #a.set_title('Input Image')
+        totalImages = totalImages + np.shape(Input_images)[0]
+
+        for i in range (0, np.shape(Mask_images)[0]):
+            a=fig.add_subplot(3, totalColumns, totalImages + i + 1)
+            a.imshow(Mask_images[i], cmap='gray')
+            #a.set_title('Input Image')
+        totalImages = totalImages + np.shape(Mask_images)[0]
+
+        for i in range (0, np.shape(Prediction_images)[0]):
+            a=fig.add_subplot(3, totalColumns, totalImages + i + 1)
+            a.imshow(Prediction_images[i], cmap='gray')
+            #a.set_title('Input Image')
+        totalImages = totalImages + np.shape(Prediction_images)[0]
+
+            
+
+        fig.subplots_adjust(left=0.1,
+                    bottom=0.1, 
+                    right=0.9, 
+                    top=0.9, 
+                    wspace=0.4, 
+                    hspace=0.4)
         
+
+        canvas = FigureCanvas(fig)
+        self.imgView_layout.addWidget(canvas)
 
     def initUI(self):
         #Layouts        
         self.main_layout = QVBoxLayout()
         self.status_layout = QHBoxLayout()
         self.hyperparameters_layout = QHBoxLayout()
+        self.imgView_layout = QVBoxLayout()
         self.control_btn_layout = QHBoxLayout()
         
         self.data_layout = QGridLayout()
-        self.imgView_layout = QVBoxLayout()
+        
         
 
 
@@ -163,21 +227,24 @@ class Main(QMainWindow):
         self.main_layout.setContentsMargins(1,1,1,1)
         self.status_layout.setContentsMargins(1,1,1,1)
         self.hyperparameters_layout.setContentsMargins(1,1,1,1)
+        self.imgView_layout.setContentsMargins(1,1,1,1)
         self.control_btn_layout.setContentsMargins(1,1,1,1)
         
         
         self.data_layout.setContentsMargins(1,1,1,1)      
-        self.imgView_layout.setContentsMargins(1,1,1,1)
+        
 
         #layout Widgets
+        self.main_widget = QWidget()
         self.status_widget = QWidget()
         self.hyperparameters_widget = QWidget()
+        self.imgView_widget = QWidget()
         self.control_btn_widget = QWidget()
 
 
         self.data_widget = QWidget()       
-        self.main_widget = QWidget()
-        self.imgView_widget = QWidget()
+        
+        
 
         #create components for layout
         self.createUIcomponents()
@@ -217,6 +284,21 @@ class Main(QMainWindow):
 
 
         self.imgView_widget.setLayout(self.imgView_layout)
+        self.imgView_widget.setFixedSize(QSize(1024, 512))
+
+        fig = Figure(figsize=(12, 12), dpi=65, facecolor=(1, 1, 1), edgecolor=(0, 0, 0))
+        example = np.ones((500,1024), dtype=np.uint8)
+        a=fig.add_subplot(1, 1, 1)
+        a.imshow(example, cmap='gray') 
+        fig.subplots_adjust(
+            left=0.05,
+            bottom=0.05, 
+            right=0.95, 
+            top=0.95, 
+            wspace=0.05, 
+            hspace=0.05)    
+        canvas = FigureCanvas(fig)
+        self.imgView_layout.addWidget(canvas)
 
 
 
@@ -326,11 +408,15 @@ class Main(QMainWindow):
         ValImages.setStatusTip('Set Validation Image Folder')
         ValImages.triggered.connect(self.setFolder_ValImages)
 
-
         ValMasks = QAction(str('Validation Masks'), self)
         #ValMasks.setShortcut("Ctrl+Q")
         ValMasks.setStatusTip('Set Validation Masks Folder')
         ValMasks.triggered.connect(self.setFolder_ValMasks)
+
+        getConfig = QAction(str('From Config File'), self)
+        #getConfig.setShortcut("Ctrl+Q")
+        getConfig.setStatusTip('Load settings from config file')
+        getConfig.triggered.connect(self.loadConfig)
 
 
 
@@ -367,6 +453,7 @@ class Main(QMainWindow):
         ValidationImages = TrainInputMenu.addMenu(str("Validation"))
         ValidationImages.addAction(ValImages)
         ValidationImages.addAction(ValMasks)
+        TrainInputMenu.addAction(getConfig)
 
 
         InputMenu = self.menuBar().addMenu(str("Test Input"))
@@ -431,6 +518,18 @@ class Main(QMainWindow):
         OutputMenu = self.menuBar().addMenu(str("Output"))
         OutputMenu.addAction(Output_folder)
 
+    def loadConfig(self):
+        with open('configs/config.yml') as fp:
+            self.cfg = yaml.safe_load(fp)
+        self.DataName_Text.setText(str(self.cfg['settings']['dataset']['datasetName']))
+        
+        self.image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.cfg['settings']['dataset']['image_dir'])
+        self.mask_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.cfg['settings']['dataset']['mask_dir'])
+        self.val_image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.cfg['settings']['dataset']['val_image_dir'])
+        self.val_mask_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.cfg['settings']['dataset']['val_mask_dir'])
+
+        self.updateStatus()
+        
 
     def setPostProcessLayer(self, PostProcess):
         for item in  self.PostProcessActions:
@@ -529,9 +628,9 @@ class Main(QMainWindow):
     def setOutput_folder(self):
         FOLDER_NAME, FOLDER_PATH = self.getFolder()
         self.statusDict['Output'] = 'Output Folder : {}'.format(FOLDER_NAME)
+        self.parameters['OutputPath'] = FOLDER_PATH
         self.updateStatus()
-        print(FOLDER_NAME)
-        print(FOLDER_PATH)
+
 
 
     def setFolder_TrImages(self):
@@ -583,7 +682,7 @@ class Main(QMainWindow):
 
         #self.parameters = {'epoch':200, 'datasetName':'dataset', 'LearningRate':5e-4, 'BatchSize':4, 'ModelInputHeight':256, 'ModelInputWidth':256, 'LogPath':'', 'TrainingImages':'', 'TrainingMasks':'', 'ValidationImages':'', 'ValidationMasks':'', 'OutputPath':'', 'Mode':'Training', 'Model':0, 'ModelName':''}
         self.parameters['datasetName'] = str(self.DataName_Text.text())
-        self.parameters['epoch'] = int(self.Epoch_Text.text())
+        self.parameters['epoch'] = int(self.Epoch_Text.text()) + 1
         self.parameters['LearningRate'] = float(self.LearningRate_Text.text())
         self.parameters['BatchSize'] = int(self.Batch_Text.text())
         self.parameters['ModelInputSize'] = int(self.ModelInSize_Text.text())
