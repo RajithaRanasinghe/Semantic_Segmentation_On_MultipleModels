@@ -60,11 +60,6 @@ class Worker(QRunnable):
 
 
 
-
-
-
-
-
 class Network(QObject):
     result = Signal(object)
     ValStart = Signal()
